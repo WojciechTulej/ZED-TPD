@@ -1,0 +1,239 @@
+---
+title: "Zaawansowana Eksploracja Danych"
+author: "Wojciech Tulej"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document: default
+---
+### Spis treści
+
+1. [Podsumowanie analizy](#1)
+2. [Kod wyliczający wykorzystane biblioteki](#2)
+3. [Kod zapewniający powtarzalność wyników przy każdym uruchomieniu raportu na tych samych danych](#3)
+4. [Kod pozwalający wczytać dane z pliku.](#4)
+5. [Kod usuwający z danych wiersze posiadające wartość zmiennej res_name](#5)
+6. [Kod przetwarzający brakujące dane.](#6)
+7. [Sekcję podsumowującą rozmiar zbioru i podstawowe statystyki](#7)
+8. [Kod ograniczający liczbę klas (res_name) do 50 najpopularniejszych wartości](#8)
+9. [Sekcję sprawdzającą korelacje między zmiennymi](#9)
+10. [Określenie ile przykładów ma każda z klas (res_name)](#10)
+11. [Wykresy rozkładów liczby atomów](#11)
+12. [Tabelę pokazującą 10 klas z największą niezgodnością liczby atomów i elektronów](#12)
+13. [Sekcję pokazującą rozkład wartości wszystkich kolumn zaczynających się od part_01 z zaznaczeniem (graficznym i liczbowym) średniej wartości](#13)
+14. [Interaktywny wykres lub animację](#14)
+15. [Sekcję sprawdzającą czy na podstawie wartości innych kolumn można przewidzieć liczbę elektronów i atomów oraz z jaką dokładnością można dokonać takiej predykcji; trafność regresji powinna zostać oszacowana na podstawie miar R^2 i RMSE;](#15)
+16. [Sekcję próbującą stworzyć klasyfikator przewidujący wartość atrybutu res_name (w tej sekcji należy wykorzystać wiedzę z pozostałych punktów oraz wykonać dodatkowe czynności, które mogą poprawić trafność klasyfikacji); trafność klasyfikacji powinna zostać oszacowana na danych inne niż uczące za pomocą mechanizmu (stratyfikowanej!) oceny krzyżowej lub (stratyfikowanego!) zbioru testowego.](#16)
+
+
+
+
+#<a name="1"/>
+###Podsumowanie analizy
+
+
+
+
+
+#<a name="2"/>
+###Kod wyliczający wykorzystane biblioteki
+
+```{r libraryLists, warning=FALSE, message=FALSE}
+library(data.table)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(corrplot)
+library(plotly)
+library(caret)
+library(knitr)
+library(kableExtra)
+
+```
+
+
+#<a name="3"/>
+###Kod zapewniający powtarzalność wyników przy każdym uruchomieniu raportu na tych samych danych
+
+```{r setSeed, warning=FALSE, message=FALSE, echo=FALSE}
+set.seed(100000)
+```
+
+
+#<a name="4"/>
+###Kod pozwalający wczytać dane z pliku
+```{r readData, results='hide'}
+
+all <- fread("all_summary.csv", header="auto", sep=";")
+
+```
+
+
+
+#<a name="5"/>
+###Kod usuwający z danych wiersze posiadające wartość zmiennej res_name
+```{r all} 
+
+all_summary <- all_summary <- all%>% filter(!(res_name %in% c('UNK', 'UNX', 'UNL', 'DUM', 'N', 'BLOB', 'ALA', 'ARG' ,'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 'ILE', 'LEU', 'LYS', 'MET', 'MSE','PHE', 'PRO', 'SEC', 'SER', 'THR', 'TRP', 'TYR', 'VAL', 'DA', 'DG', 'DT', 'DC', 'DU', 'A', 'G', 'T', 'C', 'U', 'HOH', 'H20', 'WAT')))
+
+```
+
+
+#<a name="6"/>
+###Kod przetwarzający brakujące dane
+
+```{r removeRes_name, results='hide'}
+all_summary %>% drop_na()
+
+```
+
+
+#<a name="7"/>
+###Sekcję podsumowującą rozmiar zbioru i podstawowe statystyki
+
+
+
+
+#<a name="8"/>
+###Kod ograniczający liczbę klas (res_name) do 50 najpopularniejszych wartości
+```{r res_name, echo=FALSE}
+najlepsze <- all[ , .N , by= res_name]
+najlepsze <- najlepsze[!is.na(res_name)]
+najlepsze <- najlepsze[order(-N)]
+najlepsze[1 : 50]
+
+```
+
+#<a name="9"/>
+###Sekcję sprawdzającą korelacje między zmiennymi; sekcja ta powinna zawierać jakąś formę graficznej prezentacji korelacji
+```{r cor_data_set, echo=FALSE} 
+
+
+
+all_data <- all_summary %>% select(local_res_atom_non_h_count, local_res_atom_non_h_electron_sum, part_01_electrons:part_01_density_sqrt_E3, solvent_opening_radius:solvent_radius)
+
+cordata <- cor(all_data)
+
+corrplot(cordata, method = "color", tl.cex = 0.4, tl.col = "black")
+
+```
+
+
+#<a name="10"/>
+###Określenie ile przykładów ma każda z klas (res_name)
+```{r res_name_cunt, echo=FALSE}
+
+res_name_count <- najlepsze %>% group_by(res_name) %>% summarise(count = n()) %>% arrange(desc(count))
+
+summary_res_name <- summarise(group_by(res_name_count, count), class= paste(res_name,collapse = ", "))
+
+```
+
+
+#<a name="11"/>
+###Wykresy rozkładów liczby atomów (local_res_atom_non_h_count) i elektronów (local_res_atom_non_h_electron_sum) 
+#Rozkład atomów 
+```{r atomHist, echo=FALSE} 
+
+ggplot(all, aes(x=local_res_atom_non_h_count)) + geom_histogram(binwidth = 2, fill=I("white"), col=I("black")) + labs(title="Histogram local_res_atom_non_h_count")
+
+```
+
+#Rozkład elektronów
+```{r elektronHist, echo=FALSE}
+
+wykres <- ggplot(all_summary, aes(x=local_res_atom_non_h_electron_sum)) + geom_histogram(binwidth = 25, fill=I("white"), col=I("black")) + labs(title="Histogram local_res_atom_non_h_electron_sum")
+wykres
+```
+
+#<a name="12"/>
+###Tabelę pokazującą 10 klas z największą niezgodnością liczby atomów (local_res_atom_non_h_count vs dict_atom_non_h_count) i tabelę pokazującą 10 klas z największą niezgodnością liczby elektronów (local_res_atom_non_h_electron_sum vs dict_atom_non_h_electron_sum;)
+#Niezgodność atomów
+```{r niezgodnosc_atomow, echo=FALSE}
+
+niezgodnosc_atomow <- all_summary %>% mutate(diff_atom = abs(local_res_atom_non_h_count - dict_atom_non_h_count)) %>% group_by(res_name) %>% summarize(max_diff_atom = max(diff_atom))
+
+niezgodnosc_atomow %>% arrange(desc(max_diff_atom)) %>% select(res_name, max_diff_atom) %>% head(10)
+
+```
+
+
+#Niezgodność elektronów
+```{r niezgodnosc_elektronow, echo=FALSE}
+
+niezgodnosc_elektronow <- all_summary %>% mutate(elektron = abs(local_res_atom_non_h_electron_sum - dict_atom_non_h_electron_sum)) %>% group_by(res_name) %>% summarize(max_electron = max(elektron))
+
+niezgodnosc_elektronow %>% arrange(desc(max_electron)) %>% select(res_name, max_electron) %>% head(10)
+```
+
+#<a name="13"/>
+###Sekcję pokazującą rozkład wartości wszystkich kolumn zaczynających się od part_01 z zaznaczeniem (graficznym i liczbowym) średniej wartości
+```{r his_part_01, echo=FALSE }
+
+part_01 <- select(all_summary, matches("part_01.*"))
+par(mfrow=c(1,3), las=1)
+
+for(i in 1:ncol(part_01)) {
+   mx <- mean(part_01[[i]], na.rm = TRUE)
+   hist(part_01[[i]], main = paste(colnames(part_01)[i], "\n(avg:", mx, ")", sep=""))
+   abline(v = mx, col = "blue", lwd = 2)
+ }
+
+```
+
+#<a name="14"/>
+###Interaktywny wykres
+```{r wykres , echo=FALSE}
+
+ggplotly(wykres)
+
+```
+
+
+#<a name="15"/>
+###Sekcję sprawdzającą czy na podstawie wartości innych kolumn można przewidzieć liczbę elektronów i atomów oraz z jaką dokładnością można dokonać takiej predykcji; trafność regresji powinna zostać oszacowana na podstawie miar R^2 i RMSE
+
+#Dokładnośc atomów
+```{r all_data_ML}
+all_data_ML <- all_summary
+all_data_ML[is.na(all_data_ML)] <- 0
+all_data_ML <- dplyr::select_if(all_data_ML, is.numeric)
+
+atom_model <- lm(local_res_atom_non_h_count ~ ., all_data_ML)
+atom_summary <- summary(atom_model)
+
+elektron_model <- lm(local_res_atom_non_h_electron_sum ~ ., all_data_ML)
+elektron_summary <- summary(elektron_model)
+
+atom_summary$r.squared
+atom_summary$sigma
+
+elektron_summary$r.squared
+elektron_summary$sigma
+
+```
+
+#Dokładność elektronów
+```{r all_data_ML}
+all_data_ML <- all_summary
+all_data_ML[is.na(all_data_ML)] <- 0
+all_data_ML <- dplyr::select_if(all_data_ML, is.numeric)
+
+elektron_model <- lm(local_res_atom_non_h_electron_sum ~ ., all_data_ML)
+elektron_summary <- summary(elektron_model)
+
+elektron_summary$r.squared
+elektron_summary$sigma
+
+```
+
+
+
+
+
+
+#<a name="16"/>
+###Sekcję próbującą stworzyć klasyfikator przewidujący wartość atrybutu res_name (w tej sekcji należy wykorzystać wiedzę z pozostałych punktów oraz wykonać dodatkowe czynności, które mogą poprawić trafność klasyfikacji); trafność klasyfikacji powinna zostać oszacowana na danych inne niż uczące za pomocą mechanizmu (stratyfikowanej!) oceny krzyżowej lub (stratyfikowanego!) zbioru testowego
+
+
